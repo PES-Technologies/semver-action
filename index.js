@@ -37,6 +37,7 @@ async function main () {
   }
 
   let latestTag = null
+  let latestTagWithSuffix = null
 
   if (!fromTag) {
     // GET LATEST + PREVIOUS TAGS
@@ -86,14 +87,23 @@ async function main () {
           continue
         }
       }
-      if (semver.valid(tag.name)) {
-        latestTag = tag
+      // Remove any -dev suffix
+      const cleanedTag = tag.name.replace(/-dev$/, '')
+      core.info(`Checking tag ${tag.name} (${cleanedTag}) ${semver.valid(cleanedTag) ? '✅' : '❌'}`)
+      if (semver.valid(cleanedTag)) {
+        latestTag = {
+          name: tag.name,
+          cleanName: cleanedTag,
+          isDev: tag.name.endsWith('-dev'),
+          target: tag.target
+        }
         break
       } else if (idx === 0 && !skipInvalidTags) {
         break
       }
       idx++
     }
+    core.info(`Found tag: name=${latestTag?.name},cleanName=${latestTag?.cleanName},isDev=${latestTag?.isDev ? 'true' : 'false'}`)
 
     if (!latestTag) {
       if (prefix) {
@@ -125,6 +135,16 @@ async function main () {
     })
 
     latestTag = _.get(tagRaw, 'repository.ref')
+    const cleanedTag = latestTag.name.replace(/-dev$/, '')
+    if (!semver.valid(cleanedTag)) {
+      return core.setFailed('Provided tag is invalid! (does not conform to semver)')
+    }
+    latestTag = {
+      name: latestTag.name,
+      cleanName: cleanedTag,
+      isDev: latestTag.name.endsWith('-dev'),
+      target: latestTag.target
+    }
 
     if (!latestTag) {
       return core.setFailed('Provided tag could not be found!')
@@ -257,12 +277,13 @@ async function main () {
 
   // BUMP VERSION
 
-  const next = semver.inc(latestTag.name, bump)
+  const next = semver.inc(latestTag.isDev ? latestTag.cleanName : latestTag.name, bump)
+  const nextWithSuffix = next + (latestTag.isDev ? '-dev' : '')
 
   core.info(`Current version is ${prefix}${latestTag.name}`)
-  core.info(`Next version is ${prefix}v${next}`)
+  core.info(`Next version is ${prefix}v${nextWithSuffix}`)
 
-  outputVersion(next)
+  outputVersion(nextWithSuffix)
 }
 
 main()
